@@ -29,10 +29,22 @@ GITHUB_USER="congbaby-3389"
 REPO_NAME="congbaby"
 COMMIT_MSG="feat: update congbaby profile 💜"
 
+# ── 代理配置 ──────────────────────────────────────────────────
+PROXY_URL="http://127.0.0.1:7890"
+# 导出环境变量，curl 和 git 都会自动识别（小写 + 大写双保险）
+export http_proxy="$PROXY_URL"
+export https_proxy="$PROXY_URL"
+export HTTP_PROXY="$PROXY_URL"
+export HTTPS_PROXY="$PROXY_URL"
+# 注意：部分工具对 localhost 默认不走代理，设置 no_proxy 例外为空可避免
+export no_proxy=""
+export NO_PROXY=""
+
 echo ""
 echo -e "  ${BOLD}╔══════════════════════════════════════════════════════╗${NC}"
 echo -e "  ${BOLD}║   congbaby GitHub Profile - 推送脚本 (简化稳健版)    ║${NC}"
 echo -e "  ${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
+echo -e "  ${CYAN}代理: ${NC}${PROXY_URL}"
 echo ""
 
 # ══ 第 1 步：检查 Token ══════════════════════════════════════
@@ -59,6 +71,7 @@ AUTH_ERR=$(mktemp)
 
 # 超时 15 秒，避免卡死
 HTTP_CODE=$(curl -s --connect-timeout 10 --max-time 15 \
+  --proxy "$PROXY_URL" \
   -o "$AUTH_BODY" \
   -w "%{http_code}" \
   -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -72,8 +85,9 @@ if [[ $CURL_EXIT -ne 0 ]]; then
   echo ""
   warn "curl 命令执行失败（退出码 $CURL_EXIT）"
   echo -e "  ${YELLOW}可能原因：${NC}"
-  echo -e "    ${YELLOW}1. 网络不通（国内可能需要代理/加速器访问 GitHub API）${NC}"
+  echo -e "    ${YELLOW}1. 代理 $PROXY_URL 未启动或端口不通${NC}"
   echo -e "    ${YELLOW}2. Token 格式错误（是否包含换行或空格？）${NC}"
+  echo -e "    ${YELLOW}3. 网络不通${NC}"
   echo -e "  ${YELLOW}curl 错误: ${NC}$CURL_ERR"
   echo ""
   # 不致命，提示用户可以跳过验证
@@ -127,7 +141,7 @@ echo ""
 # ══ 第 2 步：检查依赖 ════════════════════════════════════════
 info "步骤 2/6：检查依赖..."
 MISSING=0
-for cmd in git curl; do
+for cmd in git curl mktemp; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     err "缺少命令: $cmd"
     MISSING=1
@@ -144,7 +158,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR" || die "无法进入脚本目录"
 
 if [[ ! -d .git ]]; then
-  git init -b main
+  git init
+  # 兼容旧版 git（-b 参数在 Git 2.28+ 才支持）
+  git checkout -b main 2>/dev/null || git symbolic-ref HEAD refs/heads/main
   ok "git 仓库初始化完成（分支: main）"
 else
   ok "git 仓库已存在"
@@ -271,6 +287,7 @@ fi
 info "  尝试创建远程仓库（若已存在则忽略）..."
 CREATE_BODY='{"name":"congbaby","description":"congbaby GitHub Profile","private":false}'
 curl -s --connect-timeout 10 --max-time 15 \
+  --proxy "$PROXY_URL" \
   -X POST \
   -H "Authorization: token ${GITHUB_TOKEN}" \
   -H "Content-Type: application/json" \
@@ -281,8 +298,19 @@ echo ""
 
 # Push！
 info "  正在 push 到 main 分支..."
+
+# 显式配置 git 代理（环境变量已设，这是双保险）
+git config http.proxy "$PROXY_URL"
+git config https.proxy "$PROXY_URL"
+info "  已配置 git 代理: $PROXY_URL"
+
 git push -u origin main --force-with-lease 2>&1
 PUSH_RESULT=$?
+
+# 清除 git 代理配置（无论成功失败都清除）
+git config --unset http.proxy 2>/dev/null || true
+git config --unset https.proxy 2>/dev/null || true
+info "  已清除 git 代理配置"
 
 # 清除 remote URL 中的 Token（安全）
 git remote set-url origin "https://github.com/${GITHUB_USER}/${REPO_NAME}.git"
@@ -295,7 +323,7 @@ if [[ $PUSH_RESULT -ne 0 ]]; then
   echo -e "  ${YELLOW}常见原因：${NC}"
   echo -e "    ${YELLOW}1. 仓库不存在，且自动创建失败（手动去 GitHub 创建同名仓库）${NC}"
   echo -e "    ${YELLOW}2. Token 没有 repo 权限${NC}"
-  echo -e "    ${YELLOW}3. 网络问题（国内可能需要代理）${NC}"
+  echo -e "    ${YELLOW}3. 代理端口 7890 是否已启动？${NC}"
   echo -e "    ${YELLOW}4. 分支名不是 main（运行 git branch -M main 修正）${NC}"
   echo ""
   die "推送失败"

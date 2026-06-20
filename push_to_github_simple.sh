@@ -296,7 +296,7 @@ curl -s --connect-timeout 10 --max-time 15 \
 # 不检查创建结果，push 时会明确报错
 echo ""
 
-# Push！
+# Push！（带重试机制，代理偶尔瞬断）
 info "  正在 push 到 main 分支..."
 
 # 显式配置 git 代理（环境变量已设，这是双保险）
@@ -304,8 +304,35 @@ git config http.proxy "$PROXY_URL"
 git config https.proxy "$PROXY_URL"
 info "  已配置 git 代理: $PROXY_URL"
 
-git push -u origin main --force-with-lease 2>&1
-PUSH_RESULT=$?
+# 推送前先快速验证代理连通性
+info "  验证代理连通性..."
+PROXY_CHECK=$(curl -s --connect-timeout 5 --max-time 10 --proxy "$PROXY_URL" -o /dev/null -w "%{http_code}" "https://github.com" 2>&1)
+if [[ "$PROXY_CHECK" == "200" ]] || [[ "$PROXY_CHECK" == "301" ]] || [[ "$PROXY_CHECK" == "302" ]]; then
+  ok "  代理连通正常"
+else
+  warn "  代理连通性检查返回 $PROXY_CHECK，但仍尝试推送..."
+fi
+
+PUSH_RESULT=1
+MAX_RETRIES=3
+RETRY_COUNT=0
+
+while [[ $PUSH_RESULT -ne 0 && $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+  if [[ $RETRY_COUNT -gt 0 ]]; then
+    WAIT_SEC=$((RETRY_COUNT * 2))
+    warn "  第 $RETRY_COUNT 次重试，等待 ${WAIT_SEC} 秒..."
+    sleep "$WAIT_SEC"
+  fi
+
+  git push -u origin main --force-with-lease 2>&1
+  PUSH_RESULT=$?
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+
+  if [[ $PUSH_RESULT -eq 0 ]]; then
+    ok "  push 成功"
+    break
+  fi
+done
 
 # 清除 git 代理配置（无论成功失败都清除）
 git config --unset http.proxy 2>/dev/null || true
@@ -318,11 +345,11 @@ ok "已清除 remote URL 中的 Token"
 
 if [[ $PUSH_RESULT -ne 0 ]]; then
   echo ""
-  err "git push 失败（退出码 $PUSH_RESULT）"
+  err "git push 失败（退出码 $PUSH_RESULT，已重试 $((RETRY_COUNT-1)) 次）"
   echo ""
   echo -e "  ${YELLOW}常见原因：${NC}"
-  echo -e "    ${YELLOW}1. 仓库不存在，且自动创建失败（手动去 GitHub 创建同名仓库）${NC}"
-  echo -e "    ${YELLOW}2. Token 没有 repo 权限${NC}"
+  echo -e "    ${YELLOW}1. Token 无效或权限不足（需勾选 repo）${NC}"
+  echo -e "    ${YELLOW}2. 仓库不存在，且自动创建失败${NC}"
   echo -e "    ${YELLOW}3. 代理 $PROXY_URL 是否已启动？${NC}"
   echo -e "    ${YELLOW}4. 分支名不是 main（运行 git branch -M main 修正）${NC}"
   echo ""

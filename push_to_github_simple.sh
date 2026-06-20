@@ -323,7 +323,7 @@ if [[ $PUSH_RESULT -ne 0 ]]; then
   echo -e "  ${YELLOW}常见原因：${NC}"
   echo -e "    ${YELLOW}1. 仓库不存在，且自动创建失败（手动去 GitHub 创建同名仓库）${NC}"
   echo -e "    ${YELLOW}2. Token 没有 repo 权限${NC}"
-  echo -e "    ${YELLOW}3. 代理端口 7890 是否已启动？${NC}"
+  echo -e "    ${YELLOW}3. 代理 $PROXY_URL 是否已启动？${NC}"
   echo -e "    ${YELLOW}4. 分支名不是 main（运行 git branch -M main 修正）${NC}"
   echo ""
   die "推送失败"

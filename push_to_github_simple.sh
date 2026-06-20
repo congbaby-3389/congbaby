@@ -30,7 +30,7 @@ REPO_NAME="congbaby"
 COMMIT_MSG="feat: update congbaby profile 💜"
 
 # ── 代理配置 ──────────────────────────────────────────────────
-PROXY_URL="http://127.0.0.1:7890"
+PROXY_URL="http://127.0.0.1:7897"
 # 导出环境变量，curl 和 git 都会自动识别（小写 + 大写双保险）
 export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
